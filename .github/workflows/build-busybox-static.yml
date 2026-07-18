@@ -161,8 +161,13 @@ jobs:
           make defconfig
           # Enable static linking
           sed -i 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
+          # Disable tc (Traffic Control) - 避免内核 6.8+ API 不兼容
+          sed -i 's/CONFIG_TC=y/CONFIG_TC=n/' .config
           # Keep CONFIG_FEATURE_INSTALLER enabled (default is y)
-          # 保持完整帮助信息（不压缩，显示详细用法）
+          # 保持完整帮助信息（默认开启）
+          echo "✅ Configuration complete"
+          echo "Static linking: enabled"
+          echo "TC: disabled"
 
       - name: Build BusyBox
         working-directory: ./busybox-source
@@ -182,7 +187,7 @@ jobs:
         run: |
           file busybox
           ./busybox --help | head -5
-          ./busybox --install --help | head -3 || true
+          ./busybox --list | grep tc && echo "⚠️ TC still included" || echo "✅ TC not included"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -259,6 +264,11 @@ jobs:
             
             ### 📖 Full help support
             All commands include **complete --help** information for easy debugging.
+            
+            ### ⚙️ Build Notes
+            - **TC disabled**: Traffic Control tool excluded to avoid kernel 6.8+ API compatibility issues
+            - **Static linking**: No external library dependencies
+            - **INSTALLER support**: `--install` command available for easy deployment
             
             ### ✅ Verify
             ```bash
