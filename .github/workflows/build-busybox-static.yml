@@ -53,51 +53,44 @@ jobs:
       max-parallel: 4
       matrix:
         include:
-          # x86 架构
+          # x86_64 - 使用系统原生编译器
           - target: x86_64
-            arch: x86_64
             triple: x86_64-linux-gnu
-            pkg_arch: amd64
+            native: true
+          
+          # i386
           - target: i386
-            arch: i386
             triple: i686-linux-gnu
-            pkg_arch: i386
+            native: false
           
           # ARM 架构
           - target: aarch64
-            arch: arm64
             triple: aarch64-linux-gnu
-            pkg_arch: arm64
+            native: false
           - target: armhf
-            arch: armhf
             triple: arm-linux-gnueabihf
-            pkg_arch: armhf
+            native: false
           - target: armel
-            arch: armel
             triple: arm-linux-gnueabi
-            pkg_arch: armel
+            native: false
           
           # RISC-V
           - target: riscv64
-            arch: riscv64
             triple: riscv64-linux-gnu
-            pkg_arch: riscv64
+            native: false
           
           # MIPS
           - target: mips
-            arch: mips
             triple: mips-linux-gnu
-            pkg_arch: mips
+            native: false
           - target: mipsel
-            arch: mipsel
             triple: mipsel-linux-gnu
-            pkg_arch: mipsel
+            native: false
           
           # PowerPC
           - target: ppc64le
-            arch: ppc64le
             triple: powerpc64le-linux-gnu
-            pkg_arch: ppc64el
+            native: false
 
     steps:
       - name: Checkout
@@ -106,29 +99,41 @@ jobs:
       - name: Install cross compiler
         run: |
           sudo apt-get update
-          case "${{ matrix.triple }}" in
-            riscv64-linux-gnu)
-              sudo apt-get install -y gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu
-              ;;
-            mips-linux-gnu)
-              sudo apt-get install -y gcc-mips-linux-gnu binutils-mips-linux-gnu
-              ;;
-            mipsel-linux-gnu)
-              sudo apt-get install -y gcc-mipsel-linux-gnu binutils-mipsel-linux-gnu
-              ;;
-            powerpc64le-linux-gnu)
-              sudo apt-get install -y gcc-powerpc64le-linux-gnu binutils-powerpc64le-linux-gnu
-              ;;
-            *)
-              sudo apt-get install -y \
-                gcc-${{ matrix.triple }} \
-                binutils-${{ matrix.triple }} \
-                libc6-dev-${{ matrix.pkg_arch }}-cross || \
-              sudo apt-get install -y \
-                gcc-${{ matrix.triple }} \
-                binutils-${{ matrix.triple }}
-              ;;
-          esac
+          if [ "${{ matrix.native }}" = "true" ]; then
+            echo "Using native compiler for x86_64"
+            sudo apt-get install -y gcc binutils
+          else
+            case "${{ matrix.triple }}" in
+              i686-linux-gnu)
+                sudo apt-get install -y gcc-i686-linux-gnu binutils-i686-linux-gnu
+                ;;
+              aarch64-linux-gnu)
+                sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+                ;;
+              arm-linux-gnueabihf)
+                sudo apt-get install -y gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf
+                ;;
+              arm-linux-gnueabi)
+                sudo apt-get install -y gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi
+                ;;
+              riscv64-linux-gnu)
+                sudo apt-get install -y gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu
+                ;;
+              mips-linux-gnu)
+                sudo apt-get install -y gcc-mips-linux-gnu binutils-mips-linux-gnu
+                ;;
+              mipsel-linux-gnu)
+                sudo apt-get install -y gcc-mipsel-linux-gnu binutils-mipsel-linux-gnu
+                ;;
+              powerpc64le-linux-gnu)
+                sudo apt-get install -y gcc-powerpc64le-linux-gnu binutils-powerpc64le-linux-gnu
+                ;;
+              *)
+                echo "Unknown triple: ${{ matrix.triple }}"
+                exit 1
+                ;;
+            esac
+          fi
 
       - name: Cache BusyBox source
         uses: actions/cache@v4
@@ -157,15 +162,20 @@ jobs:
           # Enable static linking
           sed -i 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
           # Keep CONFIG_FEATURE_INSTALLER enabled (default is y)
-          # 可选: 缩减体积
-          sed -i 's/CONFIG_FEATURE_VERBOSE_USAGE=y/CONFIG_FEATURE_VERBOSE_USAGE=n/' .config
-          sed -i 's/CONFIG_FEATURE_COMPRESS_USAGE=y/CONFIG_FEATURE_COMPRESS_USAGE=n/' .config
+          # 保持完整帮助信息（不压缩，显示详细用法）
 
       - name: Build BusyBox
         working-directory: ./busybox-source
         run: |
-          make CROSS_COMPILE=${{ matrix.triple }}- CC=${{ matrix.triple }}-gcc -j$(nproc)
-          ${{ matrix.triple }}-strip busybox
+          if [ "${{ matrix.native }}" = "true" ]; then
+            echo "Building natively for x86_64"
+            make -j$(nproc)
+            strip busybox
+          else
+            echo "Cross compiling for ${{ matrix.triple }}"
+            make CROSS_COMPILE=${{ matrix.triple }}- CC=${{ matrix.triple }}-gcc -j$(nproc)
+            ${{ matrix.triple }}-strip busybox
+          fi
 
       - name: Test built binary
         working-directory: ./busybox-source
@@ -247,6 +257,9 @@ jobs:
             ./busybox-<platform> --install -s /usr/local/bin
             ```
             
+            ### 📖 Full help support
+            All commands include **complete --help** information for easy debugging.
+            
             ### ✅ Verify
             ```bash
             sha256sum -c SHA256SUMS
@@ -287,7 +300,7 @@ jobs:
             
             console.log(`✅ All ${files.length} assets uploaded successfully`);
 
-      - name: Update latest tag (optional)
+      - name: Update latest tag
         if: success()
         run: |
           git config user.name "github-actions[bot]"
