@@ -57,40 +57,49 @@ jobs:
           - target: x86_64
             triple: x86_64-linux-gnu
             native: true
+            qemu: ""
           
           # i386
           - target: i386
             triple: i686-linux-gnu
             native: false
+            qemu: ""
           
           # ARM 架构
           - target: aarch64
             triple: aarch64-linux-gnu
             native: false
+            qemu: "qemu-aarch64-static"
           - target: armhf
             triple: arm-linux-gnueabihf
             native: false
+            qemu: "qemu-arm-static"
           - target: armel
             triple: arm-linux-gnueabi
             native: false
+            qemu: "qemu-arm-static"
           
           # RISC-V
           - target: riscv64
             triple: riscv64-linux-gnu
             native: false
+            qemu: "qemu-riscv64-static"
           
           # MIPS
           - target: mips
             triple: mips-linux-gnu
             native: false
+            qemu: "qemu-mips-static"
           - target: mipsel
             triple: mipsel-linux-gnu
             native: false
+            qemu: "qemu-mipsel-static"
           
           # PowerPC
           - target: ppc64le
             triple: powerpc64le-linux-gnu
             native: false
+            qemu: "qemu-ppc64le-static"
 
     steps:
       - name: Checkout
@@ -184,14 +193,32 @@ jobs:
             ${{ matrix.triple }}-strip busybox
           fi
 
-      - name: Test built binary
+      - name: Install QEMU for cross-architecture testing
+        if: matrix.qemu != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static
+
+      - name: Test built binary with QEMU
         working-directory: ./busybox-source
         run: |
+          echo "📋 Binary info:"
           file busybox
-          ./busybox --help | head -5
-          echo "✅ Checking included applets..."
-          ./busybox --list | grep -q tc && echo "⚠️ TC still included" || echo "  ✅ TC excluded"
-          ./busybox --list | grep -q sha1sum && echo "  ✅ sha1sum included (software only)" || echo "  ⚠️ sha1sum not found"
+          echo ""
+          
+          if [ -z "${{ matrix.qemu }}" ]; then
+            # x86/x86_64 直接运行
+            echo "🔄 Running natively for x86 architecture"
+            ./busybox --help | head -5
+            ./busybox --list | grep -q tc && echo "⚠️ TC still included" || echo "✅ TC excluded"
+            ./busybox --list | grep -q sha1sum && echo "✅ sha1sum included (software only)" || echo "⚠️ sha1sum not found"
+          else
+            # 非 x86 使用 QEMU 模拟
+            echo "🔄 Running with QEMU for ${{ matrix.target }}"
+            ${{ matrix.qemu }} ./busybox --help | head -5
+            ${{ matrix.qemu }} ./busybox --list | grep -q tc && echo "⚠️ TC still included" || echo "✅ TC excluded"
+            ${{ matrix.qemu }} ./busybox --list | grep -q sha1sum && echo "✅ sha1sum included (software only)" || echo "⚠️ sha1sum not found"
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -211,7 +238,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # 拉取完整历史，用于 tag 操作
+          fetch-depth: 0
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -227,7 +254,6 @@ jobs:
               cp "$dir/busybox" "release-files/busybox-$platform"
             fi
           done
-          # Create checksums
           cd release-files
           sha256sum busybox-* > SHA256SUMS
           cd ..
@@ -319,18 +345,3 @@ jobs:
             }
             
             console.log(`✅ All ${files.length} assets uploaded successfully`);
-
-      - name: Update latest tag to highest version
-        if: success()
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # 获取所有 busybox-* 标签，按版本号排序，取最大值
-          LATEST_VERSION=$(git tag -l 'busybox-*' | sed 's/busybox-//' | sort -V | tail -n1)
-          echo "📌 Highest version found: ${LATEST_VERSION}"
-          
-          git tag -f latest "busybox-${LATEST_VERSION}"
-          git push -f origin latest
-          
-          echo "✅ latest tag now points to busybox-${LATEST_VERSION}"
