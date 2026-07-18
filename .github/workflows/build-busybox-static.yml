@@ -208,6 +208,11 @@ jobs:
       contents: write
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 拉取完整历史，用于 tag 操作
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -315,10 +320,17 @@ jobs:
             
             console.log(`✅ All ${files.length} assets uploaded successfully`);
 
-      - name: Update latest tag
+      - name: Update latest tag to highest version
         if: success()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -f latest
+          
+          # 获取所有 busybox-* 标签，按版本号排序，取最大值
+          LATEST_VERSION=$(git tag -l 'busybox-*' | sed 's/busybox-//' | sort -V | tail -n1)
+          echo "📌 Highest version found: ${LATEST_VERSION}"
+          
+          git tag -f latest "busybox-${LATEST_VERSION}"
           git push -f origin latest
+          
+          echo "✅ latest tag now points to busybox-${LATEST_VERSION}"
