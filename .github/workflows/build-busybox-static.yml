@@ -163,11 +163,13 @@ jobs:
           sed -i 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
           # Disable tc (Traffic Control) - 避免内核 6.8+ API 不兼容
           sed -i 's/CONFIG_TC=y/CONFIG_TC=n/' .config
+          # Disable SHA1 hardware acceleration - 修复非 x86 架构编译失败
+          sed -i 's/CONFIG_SHA1_HWACCEL=y/CONFIG_SHA1_HWACCEL=n/' .config
           # Keep CONFIG_FEATURE_INSTALLER enabled (default is y)
-          # 保持完整帮助信息（默认开启）
           echo "✅ Configuration complete"
-          echo "Static linking: enabled"
-          echo "TC: disabled"
+          echo "  - Static linking: enabled"
+          echo "  - TC: disabled"
+          echo "  - SHA1 HWACCEL: disabled"
 
       - name: Build BusyBox
         working-directory: ./busybox-source
@@ -187,7 +189,9 @@ jobs:
         run: |
           file busybox
           ./busybox --help | head -5
-          ./busybox --list | grep tc && echo "⚠️ TC still included" || echo "✅ TC not included"
+          echo "✅ Checking included applets..."
+          ./busybox --list | grep -q tc && echo "⚠️ TC still included" || echo "  ✅ TC excluded"
+          ./busybox --list | grep -q sha1sum && echo "  ✅ sha1sum included (software only)" || echo "  ⚠️ sha1sum not found"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -267,6 +271,7 @@ jobs:
             
             ### ⚙️ Build Notes
             - **TC disabled**: Traffic Control tool excluded to avoid kernel 6.8+ API compatibility issues
+            - **SHA1 HWACCEL disabled**: Hardware acceleration disabled to fix non-x86 build failures (software fallback works fine)
             - **Static linking**: No external library dependencies
             - **INSTALLER support**: `--install` command available for easy deployment
             
